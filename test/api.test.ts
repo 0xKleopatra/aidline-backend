@@ -4,7 +4,16 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Db } from '../src/db/pool.js';
 import { Indexer } from '../src/indexer/indexer.js';
 import type { ChainCampaign } from '../src/stellar/contract.js';
-import { account, chainCampaign, CONTRACT_ID, events, resetDb, setupApp } from './helpers.js';
+import {
+  account,
+  chainCampaign,
+  CONTRACT_ID,
+  events,
+  MAGIC,
+  multipartBody,
+  resetDb,
+  setupApp,
+} from './helpers.js';
 
 const { app, db } = (await setupApp()) as { app: FastifyInstance; db: Db };
 
@@ -97,20 +106,14 @@ describe('API', () => {
   });
 
   it('attaches uploaded proofs to released milestones', async () => {
-    const boundary = '----aidline';
-    const body = [
-      `--${boundary}\r\nContent-Disposition: form-data; name="campaignId"\r\n\r\n0`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="milestoneIndex"\r\n\r\n0`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="note"\r\n\r\nWater tanks delivered to 3 camps`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="tanks.png"\r\nContent-Type: image/png\r\n\r\nPNGDATA`,
-      `--${boundary}--\r\n`,
-    ].join('\r\n');
-    const upload = await app.inject({
-      method: 'POST',
-      url: '/proofs',
-      payload: body,
-      headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
-    });
+    const content = Buffer.concat([MAGIC['image/png'], Buffer.from('PNGDATA')]);
+    const { payload, headers } = multipartBody([
+      { name: 'campaignId', value: '0' },
+      { name: 'milestoneIndex', value: '0' },
+      { name: 'note', value: 'Water tanks delivered to 3 camps' },
+      { name: 'files', filename: 'tanks.png', contentType: 'image/png', content },
+    ]);
+    const upload = await app.inject({ method: 'POST', url: '/proofs', payload, headers });
     expect(upload.statusCode).toBe(201);
     const proof = upload.json();
     expect(proof.files[0].url).toMatch(/\/uploads\/proofs\/.+\/0\.png$/);
@@ -128,7 +131,8 @@ describe('API', () => {
     });
 
     const file = await app.inject({ url: new URL(proof.files[0].url).pathname });
-    expect(file.body).toBe('PNGDATA');
+    expect(file.rawPayload).toEqual(content);
+    expect(file.headers['content-type']).toMatch(/^image\/png/);
   });
 
   it('rejects proof files of the wrong type', async () => {

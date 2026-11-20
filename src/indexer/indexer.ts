@@ -46,6 +46,8 @@ export interface IndexerOptions {
   startLedger?: number;
   pollMs: number;
   log: FastifyBaseLogger;
+  /** Cleared after every successful write so cached reads never go stale. */
+  cache?: { clear(): void };
 }
 
 /**
@@ -141,9 +143,10 @@ export class Indexer {
         await recordEvent(client, ev);
       }
       await client.query(
-        `INSERT INTO indexer_state (id, cursor, last_ledger, latest_ledger) VALUES (1, $1, $2, $3)
+        `INSERT INTO indexer_state (id, cursor, last_ledger, latest_ledger, updated_at)
+         VALUES (1, $1, $2, $3, now())
          ON CONFLICT (id) DO UPDATE SET cursor = EXCLUDED.cursor, last_ledger = EXCLUDED.last_ledger,
-           latest_ledger = EXCLUDED.latest_ledger`,
+           latest_ledger = EXCLUDED.latest_ledger, updated_at = now()`,
         [res.cursor, indexedLedger, res.latestLedger],
       );
       await client.query('COMMIT');
@@ -154,6 +157,8 @@ export class Indexer {
       client.release();
     }
 
+    // A committed write makes cached aggregates stale, so drop them immediately.
+    this.opts.cache?.clear();
     if (events.length) this.opts.log.info({ count: events.length }, 'indexed events');
     return res.events.length;
   }
@@ -225,8 +230,9 @@ export class Indexer {
       // NULL cursor means: start from startLedger on the next syncOnce call.
       // We store oldestLedger as last_ledger so /health reports a sensible value.
       await client.query(
-        `INSERT INTO indexer_state (id, cursor, last_ledger) VALUES (1, NULL, $1)
-         ON CONFLICT (id) DO UPDATE SET cursor = NULL, last_ledger = EXCLUDED.last_ledger`,
+        `INSERT INTO indexer_state (id, cursor, last_ledger, updated_at) VALUES (1, NULL, $1, now())
+         ON CONFLICT (id) DO UPDATE SET cursor = NULL, last_ledger = EXCLUDED.last_ledger,
+           updated_at = now()`,
         [oldestLedger],
       );
 
@@ -240,6 +246,7 @@ export class Indexer {
       client.release();
     }
 
+    this.opts.cache?.clear();
     log.warn(
       { oldestLedger, campaignsResynchronised: knownCampaigns.length },
       'gap recovery complete, indexer will resume from oldest available ledger',

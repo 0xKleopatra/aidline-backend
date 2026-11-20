@@ -26,11 +26,27 @@ Renders an interactive Swagger UI reference for the API. Navigate here in a brow
 
 ### `GET /health`
 
+Legacy combined status, kept for compatibility with existing monitors.
+
 ```json
 { "ok": true, "indexedLedger": 4993748, "latestLedger": 4993760, "lagLedgers": 12 }
 ```
 
 `latestLedger` is the most recent ledger seen from the network on the last sync. `lagLedgers` is the difference between `latestLedger` and `indexedLedger`. Both are `null` before the first sync completes.
+
+### `GET /live`
+
+Liveness probe: `200 { "ok": true }` while the process is running. It does not touch the database, so a database outage does not restart a healthy process.
+
+### `GET /ready`
+
+Readiness probe for load balancers and orchestrators.
+
+```json
+{ "ready": true, "checks": { "database": "ok", "indexer": "ok" } }
+```
+
+Returns `503` when the database cannot be reached (`checks.database` is `unavailable`) or when the indexer is enabled but has not written in the last 60 seconds (`checks.indexer` is `not_synced`, `stale` or `unavailable`). When the indexer is disabled (`INDEXER_ENABLED=false` or no `AIDLINE_CONTRACT_ID`), only the database is checked.
 
 ### `GET /metrics`
 
@@ -68,6 +84,8 @@ Network details the frontend needs: `network`, `networkPassphrase`, `rpcUrl`, `c
 ```
 
 Money held in escrow is `totalDonated - totalReleased - totalRefunded`.
+
+Responses are cached in memory for 10 seconds and carry `Cache-Control: public, max-age=10`. The `X-Cache` header is `MISS` on a fresh response and `HIT` when served from the cache. Indexer writes invalidate the cache immediately.
 
 ### `GET /stats/history`
 
@@ -219,6 +237,8 @@ Returns a CSV file containing the complete financial activity for a campaign: do
 
 Recent milestone payouts across all campaigns, newest first. Each item has `campaignId`, `campaignTitle`, `location`, `kind`, `index`, `amount`, `releasedAt`, `txHash`, `verifier`, `verifierName`, `proofUri` and `proof`. Paginated with `limit` and `offset`.
 
+Cached in memory for 10 seconds per `limit`/`offset` pair, with the same `Cache-Control` and `X-Cache` headers as `/stats`. Indexer writes invalidate the cache immediately.
+
 ## Metadata
 
 ### `POST /metadata`
@@ -243,6 +263,8 @@ Returns `201 { "id": "<uuid>", "uri": "http://.../metadata/<uuid>" }`. Pass `uri
 ### `POST /proofs`
 
 `multipart/form-data` with fields `campaignId`, `milestoneIndex`, `note` (10 to 2000 chars) and up to 5 `files` (JPEG, PNG, WebP or PDF, 5 MB each).
+
+The bytes of each file are checked against its declared type: a file whose contents are not a real JPEG, PNG, WebP or PDF is rejected with `400 { "error": "invalid_file" }`. The stored extension always comes from the detected type, never the uploaded filename.
 
 Returns `201 { "id", "uri", "files" }`. Pass `uri` as `proof_uri` to `approve_milestone`.
 
