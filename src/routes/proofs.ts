@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { notFound } from '../lib/http.js';
+import { notFound, writeRateLimits } from '../lib/http.js';
 
 /**
  * Allowed upload types and the file extension each is stored with. The extension comes from this
@@ -34,7 +34,7 @@ const fields = z.object({
  * URI is passed to `approve_milestone` and emitted on chain.
  */
 export async function proofRoutes(app: FastifyInstance) {
-  app.post('/proofs', async (req, reply) => {
+  app.post('/proofs', { config: { rateLimit: writeRateLimits.proofs } }, async (req, reply) => {
     const id = randomUUID();
     const dir = join(app.config.UPLOAD_DIR, 'proofs', id);
     const raw: Record<string, string> = {};

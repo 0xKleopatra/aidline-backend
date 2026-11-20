@@ -14,6 +14,18 @@ Errors share one shape:
 }
 ```
 
+## Stability
+
+The web frontend and the embed widget on partner sites depend on this API, so changes are made with compatibility in mind:
+
+- **Additive changes are safe.** New endpoints, optional query parameters and response fields may be added at any time, without notice. Clients should ignore fields they do not understand and should not assume a fixed set of keys.
+- **Amounts always stay strings.** Token amounts in JSON responses, including `/stats` and the history endpoints, are decimal integer strings in the token's smallest unit (stroops for XLM). CSV exports do the same. They will never become JSON numbers, even when a value would fit, because large i128 amounts lose precision in JavaScript.
+- **Removals and renames are announced.** Removing or renaming an endpoint, field or parameter is a breaking change. It is called out in the [CHANGELOG](../CHANGELOG.md) and the old name keeps working for at least one release after the announcement (a deprecation period) before it is removed. Deprecated routes and fields are marked as such here and in the OpenAPI spec at `/openapi.json`.
+- **Error shapes are stable.** The `{ error, message, issues? }` envelope above is shared by every endpoint. New `error` codes may be added, but existing ones are not renamed or removed without the same announcement and deprecation period.
+- **Write endpoints are rate limited.** `POST /metadata`, `POST /proofs` and `POST /verifiers/applications` have tighter per-route limits than reads (50, 10 and 10 requests per minute respectively). Exceeding one returns `429` with `{ "error": "rate_limited", "message": "..." }` and a `Retry-After` header. Clients should back off and retry later rather than retrying in a tight loop. The exact limits may be tightened further; treat the `x-ratelimit-*` headers as authoritative.
+
+If your integration relies on behaviour that is not documented here, open an issue so we can either document it or keep it stable.
+
 ## Platform
 
 ### `GET /openapi.json`
@@ -257,6 +269,10 @@ Verifiers that are active on chain, with their profile when one exists.
 ### `GET /verifiers/:address`
 
 Profile and on chain status for one address.
+
+### `GET /verifiers/:address/campaigns`
+
+Campaigns where this address is the verifier, newest first. Each item has `id`, `kind`, `status`, `creator`, `goal`, `raised`, `released`, `deadline`, `createdAt`, `milestoneCount`, `milestonesReleased`, `title`, `location` and `organizer`. `milestoneCount` is the total number of milestones and `milestonesReleased` is how many have been paid out, so a verifier's track record is visible without fetching each campaign detail. Amounts are strings. An unknown address returns an empty `items` array.
 
 ### `POST /verifiers/applications`
 

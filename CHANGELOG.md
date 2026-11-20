@@ -12,7 +12,7 @@ All notable changes to this project are documented here. The format follows [Kee
 - OpenAPI spec at `/openapi.json` and interactive docs at `/docs` (#4, @RaymondAbiola)
 - Sorting campaigns by newest, ending soon or most funded (#9, @oladayo2222)
 - Consistent JSON 404s and an `X-Request-Id` header (#10, #11, @oladayo2222)
-- `GET /verifiers/:address/campaigns` (#12, @oladayo2222)
+- `GET /verifiers/:address/campaigns` with milestone counts (#12, @oladayo2222)
 - Docker Compose for Postgres, URI helper tests and database retry at boot (#13, #14, #15, @oladayo2222)
 - Automatic recovery when the RPC cursor falls out of retention (#23, @adetomiwa21, @oladayo2222)
 - CSV export for auditors at `/campaigns/:id/export.csv` (#24, @adetomiwa21)
@@ -20,6 +20,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Prometheus metrics at `GET /metrics`: request counts and latency by route, indexer progress and lag (`METRICS_ENABLED`, on by default)
 - Security headers on every response through `@fastify/helmet`, with cross-origin loading allowed so proof images still show in the frontend
 - Tests for the config loader and request helpers, and `npm run test:coverage` with a minimum threshold enforced in CI
+- Per-route rate limits for `POST /metadata`, `POST /proofs` and `POST /verifiers/applications`, returning `429` with the standard error shape
+- Documented the API stability policy in `docs/API.md` and how to handle ephemeral proof storage in `docs/DEPLOYMENT.md`
 
 ### Fixed
 

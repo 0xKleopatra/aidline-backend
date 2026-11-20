@@ -96,6 +96,14 @@ export async function buildApp(
     }
     const status = (err as { statusCode?: number }).statusCode ?? 500;
     if (status >= 500) app.log.error(err);
+    // @fastify/rate-limit throws a 429 from its onRequest hook. Give it the same
+    // error envelope as every other client error, with a code clients can match on.
+    if (status === 429) {
+      return reply.code(429).send({
+        error: 'rate_limited',
+        message: (err as Error).message || 'Too many requests',
+      });
+    }
     return reply.code(status).send({
       error: status >= 500 ? 'internal_error' : 'request_error',
       message: status >= 500 ? 'Something went wrong' : (err as Error).message,
