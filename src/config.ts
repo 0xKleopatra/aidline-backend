@@ -6,6 +6,11 @@ const bool = z
   .default('true')
   .transform((v) => v === 'true');
 
+const falseBool = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((v) => v === 'true');
+
 const schema = z.object({
   PORT: z.coerce.number().int().default(4000),
   HOST: z.string().default('0.0.0.0'),
@@ -21,6 +26,26 @@ const schema = z.object({
   INDEXER_ENABLED: bool,
   METRICS_ENABLED: bool,
   UPLOAD_DIR: z.string().default('uploads'),
+
+  // Proof storage. `local` is the default; `s3` works with any S3 compatible provider.
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  S3_BUCKET: z.string().default(''),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_ENDPOINT: z.url().optional(),
+  S3_ACCESS_KEY_ID: z.string().default(''),
+  S3_SECRET_ACCESS_KEY: z.string().default(''),
+  S3_SESSION_TOKEN: z.string().default(''),
+  S3_FORCE_PATH_STYLE: bool,
+
+  // GDACS disaster alert feed poller.
+  GDACS_ENABLED: bool,
+  GDACS_FEED_URL: z.url().default('https://www.gdacs.org/xml/rss.xml'),
+  GDACS_POLL_MS: z.coerce.number().int().min(60_000).default(300_000),
+
+  // Webhook delivery worker.
+  WEBHOOK_POLL_MS: z.coerce.number().int().min(1000).default(5000),
+  WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+  WEBHOOK_ALLOW_PRIVATE_URLS: falseBool,
 });
 
 export type Config = z.infer<typeof schema> & { networkPassphrase: string; corsOrigins: string[] };
@@ -35,6 +60,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // Treat empty strings in .env as unset so defaults apply.
   const cleaned = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== ''));
   const parsed = schema.parse(cleaned);
+  if (
+    parsed.STORAGE_DRIVER === 's3' &&
+    (!parsed.S3_BUCKET || !parsed.S3_ACCESS_KEY_ID || !parsed.S3_SECRET_ACCESS_KEY)
+  ) {
+    throw new Error(
+      'S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY are required when STORAGE_DRIVER=s3',
+    );
+  }
   return {
     ...parsed,
     PUBLIC_BASE_URL: parsed.PUBLIC_BASE_URL.replace(/\/$/, ''),

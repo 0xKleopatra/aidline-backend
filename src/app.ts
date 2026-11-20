@@ -1,12 +1,9 @@
-import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
-import fastifyStatic from '@fastify/static';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyServerOptions } from 'fastify';
@@ -14,7 +11,9 @@ import { ZodError } from 'zod';
 
 import type { Config } from './config.js';
 import type { Db } from './db/pool.js';
+import { notFound } from './lib/http.js';
 import { registerMetrics } from './metrics.js';
+import { alertRoutes } from './routes/alerts.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { donorRoutes } from './routes/donors.js';
 import { metaRoutes } from './routes/meta.js';
@@ -22,11 +21,14 @@ import { metadataRoutes } from './routes/metadata.js';
 import { proofRoutes } from './routes/proofs.js';
 import { releaseRoutes } from './routes/releases.js';
 import { verifierRoutes } from './routes/verifiers.js';
+import { webhookRoutes } from './routes/webhooks.js';
+import { createStorage, type StorageDriver } from './storage/index.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
     db: Db;
     config: Config;
+    storage: StorageDriver;
   }
 }
 
@@ -38,6 +40,7 @@ export async function buildApp(
   const app = Fastify(opts);
   app.decorate('db', db);
   app.decorate('config', config);
+  app.decorate('storage', createStorage(config));
 
   // Hardening headers (nosniff, frame-ancestors via X-Frame-Options, referrer policy, HSTS).
   // The CSP is off because this is a JSON API plus the Swagger UI, which needs inline scripts.
@@ -69,6 +72,8 @@ export async function buildApp(
         { name: 'proofs', description: 'Verifier evidence uploads' },
         { name: 'verifiers', description: 'Verifier profiles and applications' },
         { name: 'donors', description: 'Donor profiles and donation history' },
+        { name: 'alerts', description: 'Recent GDACS disaster alerts' },
+        { name: 'webhooks', description: 'Milestone release webhook subscriptions' },
       ],
     },
   });
@@ -82,9 +87,14 @@ export async function buildApp(
     uiConfig: { docExpansion: 'list', deepLinking: false },
   });
 
-  const uploadRoot = resolve(config.UPLOAD_DIR);
-  mkdirSync(uploadRoot, { recursive: true });
-  await app.register(fastifyStatic, { root: uploadRoot, prefix: '/uploads/' });
+  // One stable URL shape for both storage drivers: proof URIs already written
+  // on chain do not change when an operator moves files to S3 compatible storage.
+  app.get('/uploads/*', { schema: { hide: true } }, async (req, reply) => {
+    const key = (req.params as { '*': string })['*'];
+    const object = await app.storage.get(key);
+    if (!object) return notFound(reply, 'file');
+    return reply.header('content-type', object.contentType).send(object.body);
+  });
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ZodError) {
@@ -124,6 +134,8 @@ export async function buildApp(
   await app.register(releaseRoutes);
   await app.register(verifierRoutes);
   await app.register(donorRoutes);
+  await app.register(alertRoutes);
+  await app.register(webhookRoutes);
 
   return app;
 }

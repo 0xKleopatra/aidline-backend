@@ -219,6 +219,30 @@ Returns a CSV file containing the complete financial activity for a campaign: do
 
 Recent milestone payouts across all campaigns, newest first. Each item has `campaignId`, `campaignTitle`, `location`, `kind`, `index`, `amount`, `releasedAt`, `txHash`, `verifier`, `verifierName`, `proofUri` and `proof`. Paginated with `limit` and `offset`.
 
+## Alerts
+
+### `GET /alerts`
+
+Recent orange and red disaster alerts from the GDACS feed, newest first. A background job polls the feed and deduplicates alerts by their feed id, so repeated polls never create duplicates. Query: `limit` (max 100, default 20), `offset`, `severity` (`orange` | `red`).
+
+```json
+{
+  "items": [
+    {
+      "id": "gdacs-guid",
+      "eventType": "flood",
+      "severity": "red",
+      "title": "Flood in Bangladesh",
+      "location": "Bangladesh",
+      "country": "Bangladesh",
+      "url": "https://www.gdacs.org/report.aspx?...",
+      "publishedAt": "2026-11-20T09:00:00.000Z",
+      "fetchedAt": "2026-11-20T09:05:00.000Z"
+    }
+  ]
+}
+```
+
 ## Metadata
 
 ### `POST /metadata`
@@ -244,7 +268,7 @@ Returns `201 { "id": "<uuid>", "uri": "http://.../metadata/<uuid>" }`. Pass `uri
 
 `multipart/form-data` with fields `campaignId`, `milestoneIndex`, `note` (10 to 2000 chars) and up to 5 `files` (JPEG, PNG, WebP or PDF, 5 MB each).
 
-Returns `201 { "id", "uri", "files" }`. Pass `uri` as `proof_uri` to `approve_milestone`.
+Returns `201 { "id", "uri", "files" }`. Pass `uri` as `proof_uri` to `approve_milestone`. Each entry in `files` has `name`, `type`, `url` (original) and `thumbnailUrl`. Image uploads get a real, resized PNG thumbnail (max 256 px on the long side); when no thumbnail can be produced `thumbnailUrl` equals `url`. The original is always kept. Files may be stored locally or in S3 compatible storage — the public URLs are the same either way.
 
 ### `GET /proofs/:id`
 
@@ -284,6 +308,41 @@ Profile and on chain status for one address.
 }
 ```
 
+## Webhooks
+
+Campaign organisers can subscribe a URL to milestone release notifications. Delivery is enqueued in the indexer's transaction, so one on-chain release produces one delivery per subscriber, even if the event is replayed. A separate worker sends JSON POSTs and retries failures with capped exponential backoff; failures are logged and the last error is kept on the delivery record.
+
+### `POST /campaigns/:id/webhooks`
+
+Body `{ "url": "https://example.org/hook" }`. Returns `201 { id, campaignId, url, createdAt }`. `409 already_subscribed` when the same URL is already registered. Private hosts and embedded credentials are rejected unless `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+
+### `GET /campaigns/:id/webhooks`
+
+Returns `{ items: [{ id, campaignId, url, createdAt }] }`.
+
+### `DELETE /webhooks/:id`
+
+Unsubscribes and removes pending deliveries. Returns `204`.
+
+### `GET /webhooks/:id/deliveries`
+
+Returns `{ items: [...] }` with `status`, `attempts`, `nextAttemptAt`, `lastError`, `payload` and `createdAt`, for debugging a receiver.
+
+The POST body for a delivery:
+
+```json
+{
+  "event": "milestone_released",
+  "eventId": "0000100-...",
+  "campaignId": "0",
+  "milestoneIndex": 0,
+  "amount": "3000000000",
+  "txHash": "abc123...",
+  "releasedAt": "2026-11-20T09:00:00.000Z",
+  "proof": { "uri": "http://.../proofs/<id>", "note": "...", "files": [] }
+}
+```
+
 ## Files
 
-`GET /uploads/proofs/<proof id>/<file>` serves uploaded proof files.
+`GET /uploads/proofs/<proof id>/<file>` serves uploaded proof files from whichever storage driver is configured. The same route serves `<n>.thumb.png` thumbnails.

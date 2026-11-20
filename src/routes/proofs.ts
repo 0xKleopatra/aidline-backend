@@ -1,12 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { mkdir, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { createThumbnail } from '../lib/images.js';
 import { notFound } from '../lib/http.js';
 
 /**
@@ -31,14 +28,15 @@ const fields = z.object({
 
 /**
  * Verifiers upload evidence here before approving a milestone. The returned
- * URI is passed to `approve_milestone` and emitted on chain.
+ * URI is passed to `approve_milestone` and emitted on chain. Files go through
+ * the configured storage driver; the original is always kept alongside an
+ * optional smaller thumbnail for mobile clients.
  */
 export async function proofRoutes(app: FastifyInstance) {
   app.post('/proofs', async (req, reply) => {
     const id = randomUUID();
-    const dir = join(app.config.UPLOAD_DIR, 'proofs', id);
     const raw: Record<string, string> = {};
-    const files: { name: string; url: string; type: string }[] = [];
+    const files: { name: string; url: string; thumbnailUrl: string; type: string }[] = [];
     const written: string[] = [];
 
     try {
@@ -55,16 +53,27 @@ export async function proofRoutes(app: FastifyInstance) {
             message: `Up to ${MAX_FILES} JPEG, PNG, WebP or PDF files are allowed`,
           });
         }
-        await mkdir(dir, { recursive: true });
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of part.file) chunks.push(Buffer.from(chunk));
+        const body = Buffer.concat(chunks);
+
         const name = `${files.length}${extension}`;
-        const path = join(dir, name);
-        await pipeline(part.file, createWriteStream(path));
-        written.push(path);
-        files.push({
-          name: part.filename,
-          type: part.mimetype,
-          url: `${app.config.PUBLIC_BASE_URL}/uploads/proofs/${id}/${name}`,
-        });
+        const key = `proofs/${id}/${name}`;
+        await app.storage.put(key, body, part.mimetype);
+        written.push(key);
+
+        const url = `${app.config.PUBLIC_BASE_URL}/uploads/${key}`;
+        let thumbnailUrl = url;
+        const thumbnail = await createThumbnail(body);
+        if (thumbnail) {
+          const thumbKey = `proofs/${id}/${files.length}.thumb.png`;
+          await app.storage.put(thumbKey, thumbnail, 'image/png');
+          written.push(thumbKey);
+          thumbnailUrl = `${app.config.PUBLIC_BASE_URL}/uploads/${thumbKey}`;
+        }
+
+        files.push({ name: part.filename, type: part.mimetype, url, thumbnailUrl });
       }
 
       const f = fields.parse(raw);
@@ -77,7 +86,7 @@ export async function proofRoutes(app: FastifyInstance) {
       return reply.code(201).send({ id, uri: `${app.config.PUBLIC_BASE_URL}/proofs/${id}`, files });
     } finally {
       // Anything still listed here belongs to a rejected upload.
-      await Promise.all(written.map((p) => unlink(p).catch(() => {})));
+      await Promise.all(written.map((key) => app.storage.delete(key)));
     }
   });
 

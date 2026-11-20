@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:gdacs="http://www.gdacs.org">
+  <channel>
+    <title>GDACS Alert Notification</title>
+    <link>https://www.gdacs.org/</link>
+    <description>Recorded sample feed used by the alert poller tests</description>
+    <item>
+      <title>Flood in Bangladesh</title>
+      <link>https://www.gdacs.org/report.aspx?eventtype=FL&amp;eventid=1001</link>
+      <description>Heavy monsoon rain caused widespread flooding.</description>
+      <pubDate>Fri, 20 Nov 2026 08:00:00 GMT</pubDate>
+      <guid isPermaLink="false">gdacs-fl-1001</guid>
+      <gdacs:eventtype>FL</gdacs:eventtype>
+      <gdacs:alertlevel>Red</gdacs:alertlevel>
+      <gdacs:country>Bangladesh</gdacs:country>
+      <gdacs:location>Sylhet Division</gdacs:location>
+    </item>
+    <item>
+      <title>Tropical Cyclone near Mozambique</title>
+      <link>https://www.gdacs.org/report.aspx?eventtype=TC&amp;eventid=1002</link>
+      <description>Cyclone approaching the coast.</description>
+      <pubDate>Thu, 19 Nov 2026 12:30:00 GMT</pubDate>
+      <guid isPermaLink="false">gdacs-tc-1002</guid>
+      <gdacs:eventtype>TC</gdacs:eventtype>
+      <gdacs:alertlevel>Orange</gdacs:alertlevel>
+      <gdacs:country>Mozambique</gdacs:country>
+    </item>
+    <item>
+      <title>Minor earthquake in Chile</title>
+      <link>https://www.gdacs.org/report.aspx?eventtype=EQ&amp;eventid=1003</link>
+      <description>No significant impact expected.</description>
+      <pubDate>Wed, 18 Nov 2026 06:15:00 GMT</pubDate>
+      <guid isPermaLink="false">gdacs-eq-1003</guid>
+      <gdacs:eventtype>EQ</gdacs:eventtype>
+      <gdacs:alertlevel>Green</gdacs:alertlevel>
+      <gdacs:country>Chile</gdacs:country>
+    </item>
+  </channel>
+</rss>

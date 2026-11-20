@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { metadataIdFromUri, proofIdFromUri } from '../lib/uris.js';
 import type { ChainCampaign } from '../stellar/contract.js';
 import type { AidlineEvent } from '../stellar/events.js';
+import { enqueueReleaseWebhook } from '../webhooks/deliveries.js';
 
 export async function upsertCampaign(
   client: PoolClient,
@@ -96,6 +97,9 @@ export async function recordEvent(client: PoolClient, ev: AidlineEvent): Promise
           rowCount ? proofId : null,
         ],
       );
+      // Webhook jobs are enqueued in the same transaction. A delivery failure
+      // never blocks indexing, and a replayed event cannot enqueue twice.
+      await enqueueReleaseWebhook(client, ev);
       return;
     }
 

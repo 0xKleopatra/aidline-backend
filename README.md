@@ -50,7 +50,14 @@ All settings come from environment variables. See [`.env.example`](.env.example)
 | `AIDLINE_TOKEN_ID`     |                         | Token the contract raises in, shared with the frontend |
 | `INDEXER_START_LEDGER` | latest minus 1000       | Where to start on a fresh database                     |
 | `INDEXER_POLL_MS`      | `5000`                  | Poll interval                                          |
-| `UPLOAD_DIR`           | `uploads`               | Where proof files are stored                           |
+| `UPLOAD_DIR`           | `uploads`               | Where proof files are stored with the local driver     |
+| `STORAGE_DRIVER`       | `local`                 | `local` or `s3` (S3 compatible) for proof files        |
+| `S3_BUCKET`            |                         | Required with `STORAGE_DRIVER=s3`                      |
+| `S3_ENDPOINT`          | AWS default             | Custom S3 compatible endpoint, if any                  |
+| `S3_REGION`            | `us-east-1`             | Region used for request signing                        |
+| `GDACS_ENABLED`        | `true`                  | Poll the GDACS disaster feed                           |
+| `GDACS_POLL_MS`        | `300000`                | GDACS poll interval (minimum 60000)                    |
+| `WEBHOOK_POLL_MS`      | `5000`                  | Webhook delivery worker interval                       |
 | `METRICS_ENABLED`      | `true`                  | Serve Prometheus metrics at `/metrics`                 |
 
 Variables are prefixed with `AIDLINE_` on purpose: the Stellar CLI reads `STELLAR_*` variables from `.env`, and sharing names would make CLI commands run from this folder fail.
@@ -90,7 +97,9 @@ Generated account keys are saved to `.seed-accounts.json`, which is gitignored. 
 
 [`render.yaml`](render.yaml) describes the API for [Render](https://render.com). The database is external (the demo uses [Neon](https://neon.tech)), because Render's free Postgres expires after 30 days. Create a new Blueprint from this repo and fill in `DATABASE_URL`, `PUBLIC_BASE_URL` (the service URL), `CORS_ORIGINS` (the frontend URL), `AIDLINE_CONTRACT_ID` and `INDEXER_START_LEDGER`. See [Deployment](docs/DEPLOYMENT.md). The `Dockerfile` works on any container host.
 
-Proof uploads are stored on local disk, which is not persistent on most free hosts. Moving them to object storage is tracked as an open issue.
+Proof uploads use local disk by default. For permanent evidence on free hosts, set `STORAGE_DRIVER=s3` plus `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT` (for any S3 compatible provider) and the access key variables in [`.env.example`](.env.example). Public URLs stay at `${PUBLIC_BASE_URL}/uploads/...` with either driver, so switching storage never changes a proof URI already written on chain. Image proofs also get a smaller thumbnail URL for mobile clients; the original is always kept.
+
+The GDACS poller stores new orange and red alerts in the background and `GET /alerts` exposes them for campaign prompts. Campaign organisers can subscribe a URL with `POST /campaigns/:id/webhooks`; the indexer enqueues one delivery per milestone release and a separate worker retries failures with backoff. Neither job shares a timer with the chain indexer, so their failures cannot stop it.
 
 ## Documentation
 
