@@ -67,6 +67,8 @@ On a fresh database the indexer starts at `INDEXER_START_LEDGER`. Set it to the 
 
 Watch the process logs for indexer errors. A failed page is retried on the next tick, so brief RPC outages heal themselves.
 
+For step-by-step diagnosis of lag, a stalled indexer, gap recovery, RPC outages, a lost database or a contract redeploy, see the [indexer runbook](RUNBOOK.md).
+
 ## Proof file storage
 
 Proof uploads are written to `UPLOAD_DIR` on the instance's local disk (`uploads/proofs/<proof id>/<file>` by default), and Postgres stores only the URIs that point at them. On the free Render plan that disk is **ephemeral**: every deploy starts from a fresh container, so files uploaded before the deploy are gone while the `proofs` row and the on-chain URI are still there. Requests for those file URLs then return 404. Losing the files does not lose the database records, and it does not affect the audit trail on chain, but the evidence itself is no longer viewable.
