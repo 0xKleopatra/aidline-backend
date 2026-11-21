@@ -282,6 +282,10 @@ Verifiers that are active on chain, with their profile when one exists.
 
 Profile and on chain status for one address.
 
+### `GET /verifiers/:address/campaigns`
+
+Campaigns where this address is the verifier, newest first. Each item has `id`, `kind`, `status`, `creator`, `goal`, `raised`, `released`, `deadline`, `createdAt`, `milestoneCount`, `milestonesReleased`, `title`, `location` and `organizer`. `milestoneCount` is the total number of milestones and `milestonesReleased` is how many have been paid out, so a verifier's track record is visible without fetching each campaign detail. Amounts are strings. An unknown address returns an empty `items` array.
+
 ### `POST /verifiers/applications`
 
 `{ address, orgName, website?, country, description }`. Stores a profile. The admin still has to call `add_verifier` on chain before the address shows up as active.

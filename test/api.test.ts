@@ -170,6 +170,44 @@ describe('API', () => {
     expect(items).toEqual([expect.objectContaining({ address, orgName: 'Red Relief Network' })]);
   });
 
+  it('lists campaigns for a verifier with milestone counts', async () => {
+    const verifier = account();
+    const other = account();
+    const first = chainCampaign({
+      id: 0n,
+      verifier,
+      milestones: [300n, 300n, 400n],
+      milestonesReleased: 1,
+    });
+    const second = chainCampaign({
+      id: 1n,
+      verifier,
+      milestones: [100n, 200n],
+      milestonesReleased: 0,
+    });
+    const unrelated = chainCampaign({ id: 2n, verifier: other });
+    await index(first, [events.created(0n, first.creator)]);
+    await index(second, [events.created(1n, second.creator)]);
+    await index(unrelated, [events.created(2n, unrelated.creator)]);
+
+    const res = await app.inject({ url: `/verifiers/${verifier}/campaigns` });
+    expect(res.statusCode).toBe(200);
+    const { items } = res.json();
+    expect(items).toHaveLength(2);
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: '0', milestoneCount: 3, milestonesReleased: 1 }),
+        expect.objectContaining({ id: '1', milestoneCount: 2, milestonesReleased: 0 }),
+      ]),
+    );
+    expect(items.some((c: { id: string }) => c.id === '2')).toBe(false);
+
+    const otherRes = await app.inject({ url: `/verifiers/${other}/campaigns` });
+    expect(otherRes.json().items).toEqual([
+      expect.objectContaining({ id: '2', milestoneCount: 3, milestonesReleased: 0 }),
+    ]);
+  });
+
   it('lists recent milestone releases with campaign context', async () => {
     const meta = (await app.inject({ method: 'POST', url: '/metadata', payload: metadata })).json();
     const campaign = chainCampaign({ metadataUri: meta.uri, raised: 600n, released: 300n });

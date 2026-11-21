@@ -90,7 +90,7 @@ Generated account keys are saved to `.seed-accounts.json`, which is gitignored. 
 
 [`render.yaml`](render.yaml) describes the API for [Render](https://render.com). The database is external (the demo uses [Neon](https://neon.tech)), because Render's free Postgres expires after 30 days. Create a new Blueprint from this repo and fill in `DATABASE_URL`, `PUBLIC_BASE_URL` (the service URL), `CORS_ORIGINS` (the frontend URL), `AIDLINE_CONTRACT_ID` and `INDEXER_START_LEDGER`. See [Deployment](docs/DEPLOYMENT.md). The `Dockerfile` works on any container host.
 
-Proof uploads are stored on local disk, which is not persistent on most free hosts. Moving them to object storage is tracked as an open issue.
+Proof uploads are stored on local disk, which is not persistent on the free Render plan. See [Proof file storage](docs/DEPLOYMENT.md#proof-file-storage) for how to check for missing files and the options (a persistent disk or the object-storage work in issue #5).
 
 ## Documentation
 

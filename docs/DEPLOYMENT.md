@@ -71,7 +71,33 @@ For step-by-step diagnosis of lag, a stalled indexer, gap recovery, RPC outages,
 
 ## Proof file storage
 
-Proof uploads are written to `UPLOAD_DIR` on local disk. Most free hosts wipe local disk on every deploy, so uploaded proofs can disappear. Until proofs move to object storage (tracked as an open issue), either attach a persistent disk or pin the proof files elsewhere and use that URI on chain.
+Proof uploads are written to `UPLOAD_DIR` on the instance's local disk (`uploads/proofs/<proof id>/<file>` by default), and Postgres stores only the URIs that point at them. On the free Render plan that disk is **ephemeral**: every deploy starts from a fresh container, so files uploaded before the deploy are gone while the `proofs` row and the on-chain URI are still there. Requests for those file URLs then return 404. Losing the files does not lose the database records, and it does not affect the audit trail on chain, but the evidence itself is no longer viewable.
+
+This limitation is specific to hosts with a disposable filesystem. On a host with a persistent volume the files survive redeploys.
+
+### Checking whether proof files still exist
+
+The database is the source of truth for which files _should_ exist: each proof's `files` JSONB column holds the public URLs that were returned when it was uploaded. List them with `psql`:
+
+```sh
+psql "$DATABASE_URL" -c "SELECT id, created_at, files FROM proofs ORDER BY created_at DESC;"
+```
+
+Each element of `files` looks like `{ "name": "receipt.pdf", "type": "application/pdf", "url": "https://api.example.org/uploads/proofs/<id>/0.pdf" }`. Request those URLs to see which files survived a redeploy:
+
+```sh
+curl -sS -o /dev/null -w '%{http_code} %{url_effective}\n' '<one of the files[].url values>'
+```
+
+A `200` means the file is present; a `404` means the local disk was wiped. You can get to the same data through the API: `GET /campaigns/:id` includes each milestone's `proofUri`, and `GET /proofs/:id` returns the current `files` array. A spot check of one or two proofs after each deploy is usually enough to notice the problem before users do.
+
+### Options
+
+Until proof files move to object storage (tracked as open issue #5), choose one of these:
+
+1. **Attach a persistent disk** to the service and point `UPLOAD_DIR` at a directory on it. On Render, add a persistent disk in the service settings, mount it (for example at `/data`) and set `UPLOAD_DIR=/data/uploads`. A persistent disk survives redeploys, but it is not a backup, so snapshot it as well. This is the quickest fix and needs no code changes.
+2. **Use object storage** (S3, Cloudflare R2 or similar) so the URI emitted on chain points at durable, off-instance storage. This is issue #5 and requires a code change; follow it if proofs need to be durable without managing a disk.
+3. **Pin the evidence elsewhere** (for example on IPFS) and pass that URI to `approve_milestone` instead of the URI returned by `POST /proofs`. The upload endpoint still writes to local disk, so this only helps for proofs you publish yourself, but it does leave a durable URI on chain.
 
 ## Going to mainnet
 
