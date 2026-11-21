@@ -9,6 +9,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
 
+import { ResponseCache } from './lib/cache.js';
 import type { Config } from './config.js';
 import type { Db } from './db/pool.js';
 import { notFound } from './lib/http.js';
@@ -28,7 +29,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     db: Db;
     config: Config;
-    storage: StorageDriver;
+    cache: ResponseCache;
   }
 }
 
@@ -40,7 +41,7 @@ export async function buildApp(
   const app = Fastify(opts);
   app.decorate('db', db);
   app.decorate('config', config);
-  app.decorate('storage', createStorage(config));
+  app.decorate('cache', new ResponseCache());
 
   // Hardening headers (nosniff, frame-ancestors via X-Frame-Options, referrer policy, HSTS).
   // The CSP is off because this is a JSON API plus the Swagger UI, which needs inline scripts.
@@ -106,6 +107,14 @@ export async function buildApp(
     }
     const status = (err as { statusCode?: number }).statusCode ?? 500;
     if (status >= 500) app.log.error(err);
+    // @fastify/rate-limit throws a 429 from its onRequest hook. Give it the same
+    // error envelope as every other client error, with a code clients can match on.
+    if (status === 429) {
+      return reply.code(429).send({
+        error: 'rate_limited',
+        message: (err as Error).message || 'Too many requests',
+      });
+    }
     return reply.code(status).send({
       error: status >= 500 ? 'internal_error' : 'request_error',
       message: status >= 500 ? 'Something went wrong' : (err as Error).message,

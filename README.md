@@ -97,9 +97,7 @@ Generated account keys are saved to `.seed-accounts.json`, which is gitignored. 
 
 [`render.yaml`](render.yaml) describes the API for [Render](https://render.com). The database is external (the demo uses [Neon](https://neon.tech)), because Render's free Postgres expires after 30 days. Create a new Blueprint from this repo and fill in `DATABASE_URL`, `PUBLIC_BASE_URL` (the service URL), `CORS_ORIGINS` (the frontend URL), `AIDLINE_CONTRACT_ID` and `INDEXER_START_LEDGER`. See [Deployment](docs/DEPLOYMENT.md). The `Dockerfile` works on any container host.
 
-Proof uploads use local disk by default. For permanent evidence on free hosts, set `STORAGE_DRIVER=s3` plus `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT` (for any S3 compatible provider) and the access key variables in [`.env.example`](.env.example). Public URLs stay at `${PUBLIC_BASE_URL}/uploads/...` with either driver, so switching storage never changes a proof URI already written on chain. Image proofs also get a smaller thumbnail URL for mobile clients; the original is always kept.
-
-The GDACS poller stores new orange and red alerts in the background and `GET /alerts` exposes them for campaign prompts. Campaign organisers can subscribe a URL with `POST /campaigns/:id/webhooks`; the indexer enqueues one delivery per milestone release and a separate worker retries failures with backoff. Neither job shares a timer with the chain indexer, so their failures cannot stop it.
+Proof uploads are stored on local disk, which is not persistent on the free Render plan. See [Proof file storage](docs/DEPLOYMENT.md#proof-file-storage) for how to check for missing files and the options (a persistent disk or the object-storage work in issue #5).
 
 ## Documentation
 

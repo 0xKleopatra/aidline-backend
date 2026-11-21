@@ -53,6 +53,7 @@ if (config.INDEXER_ENABLED && config.AIDLINE_CONTRACT_ID) {
     startLedger: config.INDEXER_START_LEDGER,
     pollMs: config.INDEXER_POLL_MS,
     log: app.log.child({ module: 'indexer' }),
+    cache: app.cache,
   });
   indexer.start();
 } else {

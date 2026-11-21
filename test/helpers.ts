@@ -35,6 +35,48 @@ export async function resetDb(db: Db) {
 
 export const account = () => Keypair.random().publicKey();
 
+/** Minimal real magic bytes, enough for the upload validator to accept a file. */
+export const MAGIC = {
+  'image/jpeg': Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+  'image/png': Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  'image/webp': Buffer.concat([
+    Buffer.from('RIFF'),
+    Buffer.from([0x24, 0x00, 0x00, 0x00]),
+    Buffer.from('WEBP'),
+  ]),
+  'application/pdf': Buffer.from('%PDF-1.7\n'),
+} as const;
+
+type MultipartPart =
+  | { name: string; value: string }
+  | { name: string; filename: string; contentType: string; content: Buffer };
+
+/** Builds a multipart body as a Buffer so binary file bytes survive unchanged. */
+export function multipartBody(parts: MultipartPart[], boundary = '----aidline') {
+  const chunks = parts.flatMap((part) => {
+    if (!('content' in part)) {
+      return [
+        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"\r\n\r\n`),
+        Buffer.from(part.value),
+        Buffer.from('\r\n'),
+      ];
+    }
+    return [
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"; ` +
+          `filename="${part.filename}"\r\nContent-Type: ${part.contentType}\r\n\r\n`,
+      ),
+      part.content,
+      Buffer.from('\r\n'),
+    ];
+  });
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
+  return {
+    payload: Buffer.concat(chunks),
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+  };
+}
+
 export function chainCampaign(overrides: Partial<ChainCampaign> = {}): ChainCampaign {
   return {
     id: 0n,
