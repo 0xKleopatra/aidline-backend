@@ -312,6 +312,41 @@ Campaigns where this address is the verifier, newest first. Each item has `id`, 
 }
 ```
 
+## Webhooks
+
+Campaign organisers can subscribe a URL to milestone release notifications. Delivery is enqueued in the indexer's transaction, so one on-chain release produces one delivery per subscriber, even if the event is replayed. A separate worker sends JSON POSTs and retries failures with capped exponential backoff; failures are logged and the last error is kept on the delivery record.
+
+### `POST /campaigns/:id/webhooks`
+
+Body `{ "url": "https://example.org/hook" }`. Returns `201 { id, campaignId, url, createdAt }`. `409 already_subscribed` when the same URL is already registered. Private hosts and embedded credentials are rejected unless `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+
+### `GET /campaigns/:id/webhooks`
+
+Returns `{ items: [{ id, campaignId, url, createdAt }] }`.
+
+### `DELETE /webhooks/:id`
+
+Unsubscribes and removes pending deliveries. Returns `204`.
+
+### `GET /webhooks/:id/deliveries`
+
+Returns `{ items: [...] }` with `status`, `attempts`, `nextAttemptAt`, `lastError`, `payload` and `createdAt`, for debugging a receiver.
+
+The POST body for a delivery:
+
+```json
+{
+  "event": "milestone_released",
+  "eventId": "0000100-...",
+  "campaignId": "0",
+  "milestoneIndex": 0,
+  "amount": "3000000000",
+  "txHash": "abc123...",
+  "releasedAt": "2026-11-20T09:00:00.000Z",
+  "proof": { "uri": "http://.../proofs/<id>", "note": "...", "files": [] }
+}
+```
+
 ## Files
 
 `GET /uploads/proofs/<proof id>/<file>` serves uploaded proof files.

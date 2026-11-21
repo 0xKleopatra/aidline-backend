@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { createThumbnail } from '../lib/images.js';
 import { notFound } from '../lib/http.js';
 import { detectMimeType, HEADER_BYTES } from '../lib/magic.js';
 
@@ -60,14 +61,15 @@ async function* withPrefix(prefix: Buffer, stream: Readable): AsyncIterable<Buff
 
 /**
  * Verifiers upload evidence here before approving a milestone. The returned
- * URI is passed to `approve_milestone` and emitted on chain.
+ * URI is passed to `approve_milestone` and emitted on chain. Files go through
+ * the configured storage driver; the original is always kept alongside an
+ * optional smaller thumbnail for mobile clients.
  */
 export async function proofRoutes(app: FastifyInstance) {
   app.post('/proofs', { config: { rateLimit: writeRateLimits.proofs } }, async (req, reply) => {
     const id = randomUUID();
-    const dir = join(app.config.UPLOAD_DIR, 'proofs', id);
     const raw: Record<string, string> = {};
-    const files: { name: string; url: string; type: string }[] = [];
+    const files: { name: string; url: string; thumbnailUrl: string; type: string }[] = [];
     const written: string[] = [];
 
     try {
@@ -117,7 +119,7 @@ export async function proofRoutes(app: FastifyInstance) {
       return reply.code(201).send({ id, uri: `${app.config.PUBLIC_BASE_URL}/proofs/${id}`, files });
     } finally {
       // Anything still listed here belongs to a rejected upload.
-      await Promise.all(written.map((p) => unlink(p).catch(() => {})));
+      await Promise.all(written.map((key) => app.storage.delete(key)));
     }
   });
 

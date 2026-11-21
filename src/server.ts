@@ -6,7 +6,9 @@ import { migrate } from './db/migrate.js';
 import { createPool } from './db/pool.js';
 import { Indexer } from './indexer/indexer.js';
 import { startDailySnapshotScheduler } from './indexer/stats.js';
+import { startGdacsScheduler } from './jobs/gdacs.js';
 import { AidlineContract } from './stellar/contract.js';
+import { startWebhookDispatcher } from './webhooks/dispatcher.js';
 
 const config = loadConfig();
 
@@ -60,9 +62,28 @@ if (config.INDEXER_ENABLED && config.AIDLINE_CONTRACT_ID) {
 
 const statsTimer = startDailySnapshotScheduler(db, app.log.child({ module: 'stats' }));
 
+// Independent jobs: each one catches its own failures so neither the API nor
+// the chain indexer is affected when a feed or a webhook receiver misbehaves.
+const gdacsTimer = config.GDACS_ENABLED
+  ? startGdacsScheduler(
+      db,
+      config.GDACS_FEED_URL,
+      config.GDACS_POLL_MS,
+      app.log.child({ module: 'gdacs' }),
+    )
+  : null;
+const webhookTimer = startWebhookDispatcher(
+  db,
+  app.log.child({ module: 'webhooks' }),
+  config.WEBHOOK_MAX_ATTEMPTS,
+  config.WEBHOOK_POLL_MS,
+);
+
 const shutdown = async () => {
   indexer?.stop();
   clearInterval(statsTimer);
+  if (gdacsTimer) clearInterval(gdacsTimer);
+  clearInterval(webhookTimer);
   await app.close();
   await db.end();
   process.exit(0);

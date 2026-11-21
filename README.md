@@ -50,7 +50,14 @@ All settings come from environment variables. See [`.env.example`](.env.example)
 | `AIDLINE_TOKEN_ID`     |                         | Token the contract raises in, shared with the frontend |
 | `INDEXER_START_LEDGER` | latest minus 1000       | Where to start on a fresh database                     |
 | `INDEXER_POLL_MS`      | `5000`                  | Poll interval                                          |
-| `UPLOAD_DIR`           | `uploads`               | Where proof files are stored                           |
+| `UPLOAD_DIR`           | `uploads`               | Where proof files are stored with the local driver     |
+| `STORAGE_DRIVER`       | `local`                 | `local` or `s3` (S3 compatible) for proof files        |
+| `S3_BUCKET`            |                         | Required with `STORAGE_DRIVER=s3`                      |
+| `S3_ENDPOINT`          | AWS default             | Custom S3 compatible endpoint, if any                  |
+| `S3_REGION`            | `us-east-1`             | Region used for request signing                        |
+| `GDACS_ENABLED`        | `true`                  | Poll the GDACS disaster feed                           |
+| `GDACS_POLL_MS`        | `300000`                | GDACS poll interval (minimum 60000)                    |
+| `WEBHOOK_POLL_MS`      | `5000`                  | Webhook delivery worker interval                       |
 | `METRICS_ENABLED`      | `true`                  | Serve Prometheus metrics at `/metrics`                 |
 
 Variables are prefixed with `AIDLINE_` on purpose: the Stellar CLI reads `STELLAR_*` variables from `.env`, and sharing names would make CLI commands run from this folder fail.
