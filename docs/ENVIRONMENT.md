@@ -21,6 +21,8 @@ Copy [`.env.example`](../.env.example) to `.env` for local development.
 | -------------- | --------------------------------------------------- | -------------------------- |
 | `DATABASE_URL` | `postgres://aidline:aidline@localhost:5433/aidline` | Postgres connection string |
 
+For a hosted provider such as Neon, append `?sslmode=require` to the connection string so `pg` uses TLS, and point it at a development-only database. Never point development or tests at the production database. `npm test` uses its own temporary Postgres and ignores this variable.
+
 ## Stellar and the contract
 
 | Variable              | Default                               | Notes                                                               |
@@ -38,17 +40,36 @@ Copy [`.env.example`](../.env.example) to `.env` for local development.
 | `INDEXER_START_LEDGER` | latest minus 1000 | Where to start on a fresh database                        |
 | `INDEXER_POLL_MS`      | `5000`            | Poll interval in milliseconds. Minimum `1000`             |
 
-## Admin and keeper
+## Proof storage
 
-| Variable                       | Default   | Notes                                                                                      |
-| ------------------------------ | --------- | ------------------------------------------------------------------------------------------ |
-| `ADMIN_WALLET_ADDRESS`         | empty     | `G...` address allowed to list pending verifier applications. Empty disables the endpoint  |
-| `AIDLINE_KEEPER_SECRET`        | empty     | Funded Stellar secret for `extend_campaign_ttl`. Empty disables the keeper                 |
-| `CAMPAIGN_TTL_LEDGERS`         | `172800`  | Contract campaign TTL in ledgers (about 30 days at 5s per ledger). Keep in sync with chain |
-| `KEEPER_TTL_THRESHOLD_LEDGERS` | `7200`    | Bump campaigns with this many ledgers or fewer left before expiry                          |
-| `KEEPER_INTERVAL_MS`           | `3600000` | Sweep interval in milliseconds. Minimum `60000`                                            |
+| Variable               | Default     | Notes                                                                               |
+| ---------------------- | ----------- | ----------------------------------------------------------------------------------- |
+| `STORAGE_DRIVER`       | `local`     | `local` writes under `UPLOAD_DIR`; `s3` uses any S3 compatible provider             |
+| `S3_BUCKET`            | empty       | Required when the driver is `s3`                                                    |
+| `S3_REGION`            | `us-east-1` | Signing region                                                                      |
+| `S3_ENDPOINT`          | empty       | Custom endpoint URL, for example `http://minio:9000`. AWS is used when empty        |
+| `S3_ACCESS_KEY_ID`     | empty       | Required when the driver is `s3`                                                    |
+| `S3_SECRET_ACCESS_KEY` | empty       | Required when the driver is `s3`                                                    |
+| `S3_SESSION_TOKEN`     | empty       | Optional temporary credentials                                                      |
+| `S3_FORCE_PATH_STYLE`  | `true`      | Path-style URLs (`/bucket/key`), supported by MinIO and most S3 compatible services |
 
-The keeper only runs when the indexer is enabled: it uses the indexed ledger to decide which campaigns are near expiry. It signs a real `extend_campaign_ttl` transaction, so the key must be funded on the configured network.
+Either driver serves files from `${PUBLIC_BASE_URL}/uploads/<key>`, so proof URIs written on chain remain valid after a migration. No npm dependency is added: requests are signed with AWS Signature V4 using `node:crypto`.
+
+## GDACS alerts
+
+| Variable         | Default                             | Notes                                             |
+| ---------------- | ----------------------------------- | ------------------------------------------------- |
+| `GDACS_ENABLED`  | `true`                              | Set to `false` to skip the external feed entirely |
+| `GDACS_FEED_URL` | `https://www.gdacs.org/xml/rss.xml` | RSS feed to poll                                  |
+| `GDACS_POLL_MS`  | `300000`                            | Poll interval in milliseconds (minimum `60000`)   |
+
+## Webhooks
+
+| Variable                     | Default | Notes                                                             |
+| ---------------------------- | ------- | ----------------------------------------------------------------- |
+| `WEBHOOK_POLL_MS`            | `5000`  | How often due deliveries are sent                                 |
+| `WEBHOOK_MAX_ATTEMPTS`       | `5`     | Attempts before a delivery is marked failed                       |
+| `WEBHOOK_ALLOW_PRIVATE_URLS` | `false` | Allow local/private receiver URLs. Only for development and tests |
 
 ## Why the `AIDLINE_` prefix
 

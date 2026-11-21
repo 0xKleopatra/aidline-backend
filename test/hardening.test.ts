@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import type { Db } from '../src/db/pool.js';
-import { account, setupApp, signRequest } from './helpers.js';
+import { MAGIC, multipartBody, setupApp } from './helpers.js';
 
 const { app, db, config } = (await setupApp()) as {
   app: FastifyInstance;
@@ -31,17 +31,6 @@ afterAll(async () => {
   await db.end();
 });
 
-function multipart(parts: string[]) {
-  const boundary = '----aidline';
-  return {
-    payload: [...parts.map((p) => `--${boundary}\r\n${p}`), `--${boundary}--\r\n`].join('\r\n'),
-    headers: {
-      'content-type': `multipart/form-data; boundary=${boundary}`,
-      ...signRequest(proofSigner, 'proof:upload', { campaignId: '0' }),
-    },
-  };
-}
-
 describe('security headers', () => {
   it('sends hardening headers on API responses', async () => {
     const res = await app.inject({ url: '/stats' });
@@ -63,12 +52,21 @@ describe('security headers', () => {
 });
 
 describe('proof upload file names', () => {
+  const fields = [
+    { name: 'campaignId', value: '0' },
+    { name: 'milestoneIndex', value: '0' },
+    { name: 'note', value: 'Water tanks delivered to 3 camps' },
+  ];
+
   it('stores the file with an extension taken from its type, not its name', async () => {
-    const { payload, headers } = multipart([
-      'Content-Disposition: form-data; name="campaignId"\r\n\r\n0',
-      'Content-Disposition: form-data; name="milestoneIndex"\r\n\r\n0',
-      'Content-Disposition: form-data; name="note"\r\n\r\nWater tanks delivered to 3 camps',
-      'Content-Disposition: form-data; name="files"; filename="evil.html"\r\nContent-Type: image/png\r\n\r\n<script>alert(1)</script>',
+    const { payload, headers } = multipartBody([
+      ...fields,
+      {
+        name: 'files',
+        filename: 'evil.html',
+        contentType: 'image/png',
+        content: Buffer.concat([MAGIC['image/png'], Buffer.from('<script>alert(1)</script>')]),
+      },
     ]);
     const upload = await app.inject({ method: 'POST', url: '/proofs', payload, headers });
     expect(upload.statusCode).toBe(201);
@@ -88,11 +86,14 @@ describe('proof upload file names', () => {
     ['image/webp', 'photo.webp', '.webp'],
     ['application/pdf', 'receipt.pdf', '.pdf'],
   ])('uses %s for %s and stores it as %s', async (type, filename, extension) => {
-    const { payload, headers } = multipart([
-      'Content-Disposition: form-data; name="campaignId"\r\n\r\n0',
-      'Content-Disposition: form-data; name="milestoneIndex"\r\n\r\n0',
-      'Content-Disposition: form-data; name="note"\r\n\r\nWater tanks delivered to 3 camps',
-      `Content-Disposition: form-data; name="files"; filename="${filename}"\r\nContent-Type: ${type}\r\n\r\nDATA`,
+    const { payload, headers } = multipartBody([
+      ...fields,
+      {
+        name: 'files',
+        filename,
+        contentType: type,
+        content: Buffer.concat([MAGIC[type as keyof typeof MAGIC], Buffer.from('DATA')]),
+      },
     ]);
     const upload = await app.inject({ method: 'POST', url: '/proofs', payload, headers });
     expect(upload.statusCode).toBe(201);

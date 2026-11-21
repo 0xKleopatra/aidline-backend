@@ -1,11 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 
+import { setCacheHeaders } from '../lib/cache.js';
 import { pagination } from '../lib/http.js';
 
 /** Recent milestone payouts across all campaigns, newest first, with their evidence. */
 export async function releaseRoutes(app: FastifyInstance) {
-  app.get('/releases', async (req) => {
+  app.get('/releases', async (req, reply) => {
     const q = pagination.parse(req.query);
+    // Different pages must never share a cached response.
+    const key = `releases:${q.limit}:${q.offset}`;
+    const cached = app.cache.get<unknown>(key);
+    setCacheHeaders(reply, cached !== undefined);
+    if (cached !== undefined) return cached;
+
     const { rows } = await app.db.query(
       `SELECT r.campaign_id AS "campaignId", r.index, r.amount, r.tx_hash AS "txHash",
               r.created_at AS "releasedAt", r.proof_uri AS "proofUri",
@@ -22,6 +29,8 @@ export async function releaseRoutes(app: FastifyInstance) {
        LIMIT $1 OFFSET $2`,
       [q.limit, q.offset],
     );
-    return { items: rows };
+    const result = { items: rows };
+    app.cache.set(key, result);
+    return result;
   });
 }

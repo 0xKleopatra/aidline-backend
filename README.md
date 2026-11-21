@@ -39,24 +39,26 @@ Open http://localhost:4000/stats. Within a few seconds the indexer catches up wi
 
 All settings come from environment variables. See [`.env.example`](.env.example) for the full list.
 
-| Variable                       | Default                 | Purpose                                                |
-| ------------------------------ | ----------------------- | ------------------------------------------------------ |
-| `DATABASE_URL`                 | local dev Postgres      | Postgres connection string                             |
-| `PUBLIC_BASE_URL`              | `http://localhost:4000` | Used to build metadata and proof URIs stored on chain  |
-| `CORS_ORIGINS`                 | `http://localhost:3000` | Comma separated frontend origins                       |
-| `AIDLINE_NETWORK`              | `testnet`               | `testnet`, `mainnet` or `futurenet`                    |
-| `AIDLINE_RPC_URL`              | SDF testnet RPC         | Soroban RPC endpoint                                   |
-| `AIDLINE_CONTRACT_ID`          |                         | Contract to index. Indexer is off when empty           |
-| `AIDLINE_TOKEN_ID`             |                         | Token the contract raises in, shared with the frontend |
-| `INDEXER_START_LEDGER`         | latest minus 1000       | Where to start on a fresh database                     |
-| `INDEXER_POLL_MS`              | `5000`                  | Poll interval                                          |
-| `UPLOAD_DIR`                   | `uploads`               | Where proof files are stored                           |
-| `METRICS_ENABLED`              | `true`                  | Serve Prometheus metrics at `/metrics`                 |
-| `ADMIN_WALLET_ADDRESS`         | empty                   | Wallet allowed to list pending verifier applications   |
-| `AIDLINE_KEEPER_SECRET`        | empty                   | Funded key for the campaign TTL keeper (never commit)  |
-| `CAMPAIGN_TTL_LEDGERS`         | `172800`                | Contract campaign TTL in ledgers                       |
-| `KEEPER_TTL_THRESHOLD_LEDGERS` | `7200`                  | Ledgers remaining before the keeper bumps TTL          |
-| `KEEPER_INTERVAL_MS`           | `3600000`               | Keeper sweep interval in milliseconds                  |
+| Variable               | Default                 | Purpose                                                |
+| ---------------------- | ----------------------- | ------------------------------------------------------ |
+| `DATABASE_URL`         | local dev Postgres      | Postgres connection string                             |
+| `PUBLIC_BASE_URL`      | `http://localhost:4000` | Used to build metadata and proof URIs stored on chain  |
+| `CORS_ORIGINS`         | `http://localhost:3000` | Comma separated frontend origins                       |
+| `AIDLINE_NETWORK`      | `testnet`               | `testnet`, `mainnet` or `futurenet`                    |
+| `AIDLINE_RPC_URL`      | SDF testnet RPC         | Soroban RPC endpoint                                   |
+| `AIDLINE_CONTRACT_ID`  |                         | Contract to index. Indexer is off when empty           |
+| `AIDLINE_TOKEN_ID`     |                         | Token the contract raises in, shared with the frontend |
+| `INDEXER_START_LEDGER` | latest minus 1000       | Where to start on a fresh database                     |
+| `INDEXER_POLL_MS`      | `5000`                  | Poll interval                                          |
+| `UPLOAD_DIR`           | `uploads`               | Where proof files are stored with the local driver     |
+| `STORAGE_DRIVER`       | `local`                 | `local` or `s3` (S3 compatible) for proof files        |
+| `S3_BUCKET`            |                         | Required with `STORAGE_DRIVER=s3`                      |
+| `S3_ENDPOINT`          | AWS default             | Custom S3 compatible endpoint, if any                  |
+| `S3_REGION`            | `us-east-1`             | Region used for request signing                        |
+| `GDACS_ENABLED`        | `true`                  | Poll the GDACS disaster feed                           |
+| `GDACS_POLL_MS`        | `300000`                | GDACS poll interval (minimum 60000)                    |
+| `WEBHOOK_POLL_MS`      | `5000`                  | Webhook delivery worker interval                       |
+| `METRICS_ENABLED`      | `true`                  | Serve Prometheus metrics at `/metrics`                 |
 
 Variables are prefixed with `AIDLINE_` on purpose: the Stellar CLI reads `STELLAR_*` variables from `.env`, and sharing names would make CLI commands run from this folder fail.
 
@@ -95,7 +97,7 @@ Generated account keys are saved to `.seed-accounts.json`, which is gitignored. 
 
 [`render.yaml`](render.yaml) describes the API for [Render](https://render.com). The database is external (the demo uses [Neon](https://neon.tech)), because Render's free Postgres expires after 30 days. Create a new Blueprint from this repo and fill in `DATABASE_URL`, `PUBLIC_BASE_URL` (the service URL), `CORS_ORIGINS` (the frontend URL), `AIDLINE_CONTRACT_ID` and `INDEXER_START_LEDGER`. See [Deployment](docs/DEPLOYMENT.md). The `Dockerfile` works on any container host.
 
-Proof uploads are stored on local disk, which is not persistent on most free hosts. Moving them to object storage is tracked as an open issue.
+Proof uploads are stored on local disk, which is not persistent on the free Render plan. See [Proof file storage](docs/DEPLOYMENT.md#proof-file-storage) for how to check for missing files and the options (a persistent disk or the object-storage work in issue #5).
 
 ## Documentation
 

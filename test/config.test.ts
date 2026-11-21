@@ -17,6 +17,12 @@ describe('loadConfig', () => {
       INDEXER_ENABLED: true,
       METRICS_ENABLED: true,
       UPLOAD_DIR: 'uploads',
+      STORAGE_DRIVER: 'local',
+      GDACS_ENABLED: true,
+      GDACS_POLL_MS: 300000,
+      WEBHOOK_POLL_MS: 5000,
+      WEBHOOK_MAX_ATTEMPTS: 5,
+      WEBHOOK_ALLOW_PRIVATE_URLS: false,
     });
     expect(config.INDEXER_START_LEDGER).toBeUndefined();
   });

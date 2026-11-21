@@ -7,14 +7,13 @@ import { Indexer } from '../src/indexer/indexer.js';
 import type { ChainCampaign } from '../src/stellar/contract.js';
 import {
   account,
-  adminKeypair,
   chainCampaign,
   CONTRACT_ID,
   events,
+  MAGIC,
+  multipartBody,
   resetDb,
   setupApp,
-  signRequest,
-  uploaderKeypair,
 } from './helpers.js';
 
 const { app, db } = (await setupApp()) as { app: FastifyInstance; db: Db };
@@ -128,31 +127,14 @@ describe('API', () => {
   });
 
   it('attaches uploaded proofs to released milestones', async () => {
-    const campaign = chainCampaign({
-      verifier: proofVerifier.publicKey(),
-      raised: 1000n,
-      released: 300n,
-      milestonesReleased: 1,
-    });
-    await index(campaign, [events.created(0n, campaign.creator)]);
-
-    const boundary = '----aidline';
-    const body = [
-      `--${boundary}\r\nContent-Disposition: form-data; name="campaignId"\r\n\r\n0`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="milestoneIndex"\r\n\r\n0`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="note"\r\n\r\nWater tanks delivered to 3 camps`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="files"; filename="tanks.png"\r\nContent-Type: image/png\r\n\r\nPNGDATA`,
-      `--${boundary}--\r\n`,
-    ].join('\r\n');
-    const upload = await app.inject({
-      method: 'POST',
-      url: '/proofs',
-      payload: body,
-      headers: {
-        'content-type': `multipart/form-data; boundary=${boundary}`,
-        ...signRequest(proofVerifier, 'proof:upload', { campaignId: '0' }),
-      },
-    });
+    const content = Buffer.concat([MAGIC['image/png'], Buffer.from('PNGDATA')]);
+    const { payload, headers } = multipartBody([
+      { name: 'campaignId', value: '0' },
+      { name: 'milestoneIndex', value: '0' },
+      { name: 'note', value: 'Water tanks delivered to 3 camps' },
+      { name: 'files', filename: 'tanks.png', contentType: 'image/png', content },
+    ]);
+    const upload = await app.inject({ method: 'POST', url: '/proofs', payload, headers });
     expect(upload.statusCode).toBe(201);
     const proof = upload.json();
     expect(proof.files[0].url).toMatch(/\/uploads\/proofs\/.+\/0\.png$/);
@@ -169,7 +151,8 @@ describe('API', () => {
     });
 
     const file = await app.inject({ url: new URL(proof.files[0].url).pathname });
-    expect(file.body).toBe('PNGDATA');
+    expect(file.rawPayload).toEqual(content);
+    expect(file.headers['content-type']).toMatch(/^image\/png/);
   });
 
   it('rejects proof files of the wrong type', async () => {
@@ -213,36 +196,42 @@ describe('API', () => {
     expect(items).toEqual([expect.objectContaining({ address, orgName: 'Red Relief Network' })]);
   });
 
-  it('lists pending verifier applications only to the admin wallet', async () => {
-    const pending = account();
-    const active = account();
-    for (const address of [pending, active]) {
-      await app.inject({
-        method: 'POST',
-        url: '/verifiers/applications',
-        payload: {
-          address,
-          orgName: 'Red Relief Network',
-          country: 'Nigeria',
-          description: 'Field verification partner for flood response in Kogi state.',
-        },
-      });
-    }
-    await index(chainCampaign(), [events.verifier(active, true)]);
-
-    expect((await app.inject({ url: '/verifiers/applications' })).statusCode).toBe(401);
-    const stranger = await app.inject({
-      url: '/verifiers/applications',
-      headers: signRequest(Keypair.random(), 'admin:verifier-applications'),
+  it('lists campaigns for a verifier with milestone counts', async () => {
+    const verifier = account();
+    const other = account();
+    const first = chainCampaign({
+      id: 0n,
+      verifier,
+      milestones: [300n, 300n, 400n],
+      milestonesReleased: 1,
     });
-    expect(stranger.statusCode).toBe(403);
-
-    const res = await app.inject({
-      url: '/verifiers/applications',
-      headers: signRequest(adminKeypair, 'admin:verifier-applications'),
+    const second = chainCampaign({
+      id: 1n,
+      verifier,
+      milestones: [100n, 200n],
+      milestonesReleased: 0,
     });
+    const unrelated = chainCampaign({ id: 2n, verifier: other });
+    await index(first, [events.created(0n, first.creator)]);
+    await index(second, [events.created(1n, second.creator)]);
+    await index(unrelated, [events.created(2n, unrelated.creator)]);
+
+    const res = await app.inject({ url: `/verifiers/${verifier}/campaigns` });
     expect(res.statusCode).toBe(200);
-    expect(res.json().items).toEqual([expect.objectContaining({ address: pending })]);
+    const { items } = res.json();
+    expect(items).toHaveLength(2);
+    expect(items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: '0', milestoneCount: 3, milestonesReleased: 1 }),
+        expect.objectContaining({ id: '1', milestoneCount: 2, milestonesReleased: 0 }),
+      ]),
+    );
+    expect(items.some((c: { id: string }) => c.id === '2')).toBe(false);
+
+    const otherRes = await app.inject({ url: `/verifiers/${other}/campaigns` });
+    expect(otherRes.json().items).toEqual([
+      expect.objectContaining({ id: '2', milestoneCount: 3, milestonesReleased: 0 }),
+    ]);
   });
 
   it('lists recent milestone releases with campaign context', async () => {

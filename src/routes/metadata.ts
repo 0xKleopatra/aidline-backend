@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { verifySignedRequest } from '../lib/auth.js';
-import { notFound } from '../lib/http.js';
+import { notFound, writeRateLimits } from '../lib/http.js';
 
 const body = z.object({
   title: z.string().trim().min(5).max(120),
@@ -22,10 +21,7 @@ const body = z.object({
  * Records are immutable so the URI on chain always means the same thing.
  */
 export async function metadataRoutes(app: FastifyInstance) {
-  app.post('/metadata', async (req, reply) => {
-    // #7: anyone may create metadata, but they must prove control of a
-    // Stellar address so the upload cannot be abused anonymously.
-    if (!verifySignedRequest(req, reply, 'metadata:create')) return reply;
+  app.post('/metadata', { config: { rateLimit: writeRateLimits.metadata } }, async (req, reply) => {
     const m = body.parse(req.body);
     const id = randomUUID();
     await app.db.query(

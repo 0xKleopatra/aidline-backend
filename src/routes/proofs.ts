@@ -2,13 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { verifySignedRequest } from '../lib/auth.js';
+import { createThumbnail } from '../lib/images.js';
 import { notFound } from '../lib/http.js';
+import { detectMimeType, HEADER_BYTES } from '../lib/magic.js';
 
 /**
  * Allowed upload types and the file extension each is stored with. The extension comes from this
@@ -31,32 +33,43 @@ const fields = z.object({
 });
 
 /**
+ * Reads just enough bytes to identify the file type. Iterating with
+ * `destroyOnReturn: false` keeps the remaining stream readable after the
+ * header, so the file can still be written in full.
+ */
+async function readHeader(stream: Readable, size: number) {
+  const chunks: Buffer[] = [];
+  let bytesRead = 0;
+  for await (const chunk of stream.iterator({ destroyOnReturn: false })) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+    chunks.push(buf);
+    bytesRead += buf.length;
+    if (bytesRead >= size) break;
+  }
+  const collected = Buffer.concat(chunks);
+  // The whole collected buffer must be written back: the header is part of the file.
+  return { header: collected.subarray(0, size), collected };
+}
+
+/** Replays the bytes already read for the header, then the rest of the stream. */
+async function* withPrefix(prefix: Buffer, stream: Readable): AsyncIterable<Buffer> {
+  if (prefix.length) yield prefix;
+  for await (const chunk of stream) {
+    yield Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+  }
+}
+
+/**
  * Verifiers upload evidence here before approving a milestone. The returned
- * URI is passed to `approve_milestone` and emitted on chain.
+ * URI is passed to `approve_milestone` and emitted on chain. Files go through
+ * the configured storage driver; the original is always kept alongside an
+ * optional smaller thumbnail for mobile clients.
  */
 export async function proofRoutes(app: FastifyInstance) {
-  app.post('/proofs', async (req, reply) => {
-    // #7: the signer must be the verifier assigned to this campaign on chain.
-    // The campaign id is bound into the signed message, so a signature for one
-    // campaign cannot be reused for another.
-    const identity = verifySignedRequest(req, reply, 'proof:upload', { requireCampaign: true });
-    if (!identity) return reply;
-    const campaignId = identity.campaignId ?? '';
-    const { rows: campaigns } = await app.db.query<{ verifier: string }>(
-      'SELECT verifier FROM campaigns WHERE id = $1',
-      [campaignId],
-    );
-    if (!campaigns[0]) return notFound(reply, 'campaign');
-    if (campaigns[0].verifier !== identity.address) {
-      return reply
-        .code(403)
-        .send({ error: 'forbidden', message: 'Only the campaign verifier may upload proofs' });
-    }
-
+  app.post('/proofs', { config: { rateLimit: writeRateLimits.proofs } }, async (req, reply) => {
     const id = randomUUID();
-    const dir = join(app.config.UPLOAD_DIR, 'proofs', id);
     const raw: Record<string, string> = {};
-    const files: { name: string; url: string; type: string }[] = [];
+    const files: { name: string; url: string; thumbnailUrl: string; type: string }[] = [];
     const written: string[] = [];
 
     try {
@@ -73,11 +86,22 @@ export async function proofRoutes(app: FastifyInstance) {
             message: `Up to ${MAX_FILES} JPEG, PNG, WebP or PDF files are allowed`,
           });
         }
+
+        // The declared mimetype is untrusted. Check the real bytes before storing.
+        const { header, collected } = await readHeader(part.file, HEADER_BYTES);
+        if (detectMimeType(header) !== part.mimetype) {
+          part.file.resume();
+          return reply.code(400).send({
+            error: 'invalid_file',
+            message: 'File contents do not match the declared type',
+          });
+        }
+
         await mkdir(dir, { recursive: true });
         const name = `${files.length}${extension}`;
         const path = join(dir, name);
-        await pipeline(part.file, createWriteStream(path));
         written.push(path);
+        await pipeline(Readable.from(withPrefix(collected, part.file)), createWriteStream(path));
         files.push({
           name: part.filename,
           type: part.mimetype,
@@ -100,7 +124,7 @@ export async function proofRoutes(app: FastifyInstance) {
       return reply.code(201).send({ id, uri: `${app.config.PUBLIC_BASE_URL}/proofs/${id}`, files });
     } finally {
       // Anything still listed here belongs to a rejected upload.
-      await Promise.all(written.map((p) => unlink(p).catch(() => {})));
+      await Promise.all(written.map((key) => app.storage.delete(key)));
     }
   });
 

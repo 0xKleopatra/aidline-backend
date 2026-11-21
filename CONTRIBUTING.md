@@ -48,6 +48,20 @@ npm test
 
 Tests start their own temporary Postgres, so they work without `dev:db` running.
 
+### Using a hosted Postgres for development
+
+If you cannot run Docker, a free hosted Postgres such as [Neon](https://neon.tech) works too. Create a **development-only** database (or a separate branch in your hosted project), then put its connection string in `.env`:
+
+```sh
+DATABASE_URL=postgres://<user>:<password>@<host>/aidline_dev?sslmode=require
+```
+
+`sslmode=require` is needed because hosted providers require TLS. `npm run migrate` and `npm run dev` use whatever `DATABASE_URL` points at, so check the value before running either command.
+
+> **Never point development at the production database.** Use a dedicated dev database and testnet accounts only. Migrations and the demo seed script write to the database named in `DATABASE_URL`; a mistake there can destroy real data. Keep the connection string out of commits — `.env` is gitignored.
+
+`npm test` starts its own temporary Postgres and ignores `DATABASE_URL`, so tests never touch your hosted database.
+
 ## Making a change
 
 1. Fork the repo and branch: `git checkout -b feat/short-description`

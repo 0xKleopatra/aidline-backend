@@ -14,6 +14,8 @@ Errors share one shape:
 }
 ```
 
+If a request fails, see [Troubleshooting](#troubleshooting) for a code-by-code explanation of the cause and how to fix the request.
+
 ## Platform
 
 ### `GET /openapi.json`
@@ -26,11 +28,27 @@ Renders an interactive Swagger UI reference for the API. Navigate here in a brow
 
 ### `GET /health`
 
+Legacy combined status, kept for compatibility with existing monitors.
+
 ```json
 { "ok": true, "indexedLedger": 4993748, "latestLedger": 4993760, "lagLedgers": 12 }
 ```
 
 `latestLedger` is the most recent ledger seen from the network on the last sync. `lagLedgers` is the difference between `latestLedger` and `indexedLedger`. Both are `null` before the first sync completes.
+
+### `GET /live`
+
+Liveness probe: `200 { "ok": true }` while the process is running. It does not touch the database, so a database outage does not restart a healthy process.
+
+### `GET /ready`
+
+Readiness probe for load balancers and orchestrators.
+
+```json
+{ "ready": true, "checks": { "database": "ok", "indexer": "ok" } }
+```
+
+Returns `503` when the database cannot be reached (`checks.database` is `unavailable`) or when the indexer is enabled but has not written in the last 60 seconds (`checks.indexer` is `not_synced`, `stale` or `unavailable`). When the indexer is disabled (`INDEXER_ENABLED=false` or no `AIDLINE_CONTRACT_ID`), only the database is checked.
 
 ### `GET /metrics`
 
@@ -68,6 +86,8 @@ Network details the frontend needs: `network`, `networkPassphrase`, `rpcUrl`, `c
 ```
 
 Money held in escrow is `totalDonated - totalReleased - totalRefunded`.
+
+Responses are cached in memory for 10 seconds and carry `Cache-Control: public, max-age=10`. The `X-Cache` header is `MISS` on a fresh response and `HIT` when served from the cache. Indexer writes invalidate the cache immediately.
 
 ### `GET /stats/history`
 
@@ -219,6 +239,8 @@ Returns a CSV file containing the complete financial activity for a campaign: do
 
 Recent milestone payouts across all campaigns, newest first. Each item has `campaignId`, `campaignTitle`, `location`, `kind`, `index`, `amount`, `releasedAt`, `txHash`, `verifier`, `verifierName`, `proofUri` and `proof`. Paginated with `limit` and `offset`.
 
+Cached in memory for 10 seconds per `limit`/`offset` pair, with the same `Cache-Control` and `X-Cache` headers as `/stats`. Indexer writes invalidate the cache immediately.
+
 ## Metadata
 
 ### `POST /metadata`
@@ -268,6 +290,8 @@ For proofs use `purpose: proof:upload` and an extra final line `campaign: <campa
 
 `multipart/form-data` with fields `campaignId`, `milestoneIndex`, `note` (10 to 2000 chars) and up to 5 `files` (JPEG, PNG, WebP or PDF, 5 MB each). Requires the wallet signature headers above, with `x-stellar-campaign` matching `campaignId`; the signer must be the campaign's verifier.
 
+The bytes of each file are checked against its declared type: a file whose contents are not a real JPEG, PNG, WebP or PDF is rejected with `400 { "error": "invalid_file" }`. The stored extension always comes from the detected type, never the uploaded filename.
+
 Returns `201 { "id", "uri", "files" }`. Pass `uri` as `proof_uri` to `approve_milestone`.
 
 | Status | body `error`   | Condition                                           |
@@ -287,6 +311,10 @@ Verifiers that are active on chain, with their profile when one exists.
 ### `GET /verifiers/:address`
 
 Profile and on chain status for one address.
+
+### `GET /verifiers/:address/campaigns`
+
+Campaigns where this address is the verifier, newest first. Each item has `id`, `kind`, `status`, `creator`, `goal`, `raised`, `released`, `deadline`, `createdAt`, `milestoneCount`, `milestonesReleased`, `title`, `location` and `organizer`. `milestoneCount` is the total number of milestones and `milestonesReleased` is how many have been paid out, so a verifier's track record is visible without fetching each campaign detail. Amounts are strings. An unknown address returns an empty `items` array.
 
 ### `POST /verifiers/applications`
 
@@ -318,6 +346,59 @@ Admin review queue: applications that are not yet active on chain. Requires the 
 }
 ```
 
+## Webhooks
+
+Campaign organisers can subscribe a URL to milestone release notifications. Delivery is enqueued in the indexer's transaction, so one on-chain release produces one delivery per subscriber, even if the event is replayed. A separate worker sends JSON POSTs and retries failures with capped exponential backoff; failures are logged and the last error is kept on the delivery record.
+
+### `POST /campaigns/:id/webhooks`
+
+Body `{ "url": "https://example.org/hook" }`. Returns `201 { id, campaignId, url, createdAt }`. `409 already_subscribed` when the same URL is already registered. Private hosts and embedded credentials are rejected unless `WEBHOOK_ALLOW_PRIVATE_URLS=true`.
+
+### `GET /campaigns/:id/webhooks`
+
+Returns `{ items: [{ id, campaignId, url, createdAt }] }`.
+
+### `DELETE /webhooks/:id`
+
+Unsubscribes and removes pending deliveries. Returns `204`.
+
+### `GET /webhooks/:id/deliveries`
+
+Returns `{ items: [...] }` with `status`, `attempts`, `nextAttemptAt`, `lastError`, `payload` and `createdAt`, for debugging a receiver.
+
+The POST body for a delivery:
+
+```json
+{
+  "event": "milestone_released",
+  "eventId": "0000100-...",
+  "campaignId": "0",
+  "milestoneIndex": 0,
+  "amount": "3000000000",
+  "txHash": "abc123...",
+  "releasedAt": "2026-11-20T09:00:00.000Z",
+  "proof": { "uri": "http://.../proofs/<id>", "note": "...", "files": [] }
+}
+```
+
 ## Files
 
 `GET /uploads/proofs/<proof id>/<file>` serves uploaded proof files.
+
+## Troubleshooting
+
+Every error response has an `error` code and a human-readable `message`. `validation_error` also includes an `issues` array that pinpoints the offending fields. The codes you are most likely to hit as an integrator are below.
+
+| Status | `error` code       | What causes it                                                                                                                                                                                                                                                                                                  | How to fix the request                                                                                                                                                                                                                                                                          |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `validation_error` | Request validation rejected a path parameter, query string or body. Common causes: a campaign id that is not an integer, `limit` above 100 or below 1, a negative `offset`, an invalid enum value (for example `kind=other`), a malformed Stellar address, or a missing or out-of-range field in a `POST` body. | Read `issues`: each entry has a `path` (the field, dot-separated for nested fields) and a `message` explaining the rule. Correct those fields and resend. For pagination keep `limit` between 1 and 100 and `offset` at 0 or greater. For addresses use a `G...` account id, not a contract id. |
+| 404    | `not_found`        | Either the URL path does not match any route (the body message is `Route not found`), or the resource id does not exist (for example a campaign, metadata or proof id that was never created or has not been indexed yet).                                                                                      | Check the path and method against this reference. If the id is meant to exist, confirm it is correct and that the indexer has seen it (`GET /health` reports the indexed ledger). A brand-new campaign may take a ledger or two to appear.                                                      |
+| 413    | `request_error`    | An upload to `POST /proofs` exceeded the multipart limits: a file larger than 5 MB or more than 5 files in one request. The `message` names the limit that was hit.                                                                                                                                             | Split the proof into at most 5 files, each 5 MB or smaller, and use JPEG, PNG, WebP or PDF. Compress images before uploading. Do not send the same files twice.                                                                                                                                 |
+| 429    | `request_error`    | Rate limit exceeded: the API allows 300 requests per minute per client. The `message` reports when the limit resets, and a `Retry-After` header may be present.                                                                                                                                                 | Slow down and retry after the indicated interval. Cache `/config`, `/stats` and campaign lists instead of polling them rapidly, and back off with jitter rather than retrying immediately.                                                                                                      |
+
+Two other codes can appear but are not request mistakes you can fix by editing the payload:
+
+- `request_error` with any other 4xx status is a generic client error (the `message` explains it), for example a malformed request body that is not valid JSON.
+- `internal_error` with status 500 means the server failed. The response message is deliberately generic; the cause is in the server logs. Retry with backoff and include the `X-Request-Id` response header when reporting it.
+
+All responses carry an `X-Request-Id` header. Include it with any bug report so a specific request can be traced in the logs.
