@@ -39,19 +39,24 @@ Open http://localhost:4000/stats. Within a few seconds the indexer catches up wi
 
 All settings come from environment variables. See [`.env.example`](.env.example) for the full list.
 
-| Variable               | Default                 | Purpose                                                |
-| ---------------------- | ----------------------- | ------------------------------------------------------ |
-| `DATABASE_URL`         | local dev Postgres      | Postgres connection string                             |
-| `PUBLIC_BASE_URL`      | `http://localhost:4000` | Used to build metadata and proof URIs stored on chain  |
-| `CORS_ORIGINS`         | `http://localhost:3000` | Comma separated frontend origins                       |
-| `AIDLINE_NETWORK`      | `testnet`               | `testnet`, `mainnet` or `futurenet`                    |
-| `AIDLINE_RPC_URL`      | SDF testnet RPC         | Soroban RPC endpoint                                   |
-| `AIDLINE_CONTRACT_ID`  |                         | Contract to index. Indexer is off when empty           |
-| `AIDLINE_TOKEN_ID`     |                         | Token the contract raises in, shared with the frontend |
-| `INDEXER_START_LEDGER` | latest minus 1000       | Where to start on a fresh database                     |
-| `INDEXER_POLL_MS`      | `5000`                  | Poll interval                                          |
-| `UPLOAD_DIR`           | `uploads`               | Where proof files are stored                           |
-| `METRICS_ENABLED`      | `true`                  | Serve Prometheus metrics at `/metrics`                 |
+| Variable                       | Default                 | Purpose                                                |
+| ------------------------------ | ----------------------- | ------------------------------------------------------ |
+| `DATABASE_URL`                 | local dev Postgres      | Postgres connection string                             |
+| `PUBLIC_BASE_URL`              | `http://localhost:4000` | Used to build metadata and proof URIs stored on chain  |
+| `CORS_ORIGINS`                 | `http://localhost:3000` | Comma separated frontend origins                       |
+| `AIDLINE_NETWORK`              | `testnet`               | `testnet`, `mainnet` or `futurenet`                    |
+| `AIDLINE_RPC_URL`              | SDF testnet RPC         | Soroban RPC endpoint                                   |
+| `AIDLINE_CONTRACT_ID`          |                         | Contract to index. Indexer is off when empty           |
+| `AIDLINE_TOKEN_ID`             |                         | Token the contract raises in, shared with the frontend |
+| `INDEXER_START_LEDGER`         | latest minus 1000       | Where to start on a fresh database                     |
+| `INDEXER_POLL_MS`              | `5000`                  | Poll interval                                          |
+| `UPLOAD_DIR`                   | `uploads`               | Where proof files are stored                           |
+| `METRICS_ENABLED`              | `true`                  | Serve Prometheus metrics at `/metrics`                 |
+| `ADMIN_WALLET_ADDRESS`         | empty                   | Wallet allowed to list pending verifier applications   |
+| `AIDLINE_KEEPER_SECRET`        | empty                   | Funded key for the campaign TTL keeper (never commit)  |
+| `CAMPAIGN_TTL_LEDGERS`         | `172800`                | Contract campaign TTL in ledgers                       |
+| `KEEPER_TTL_THRESHOLD_LEDGERS` | `7200`                  | Ledgers remaining before the keeper bumps TTL          |
+| `KEEPER_INTERVAL_MS`           | `3600000`               | Keeper sweep interval in milliseconds                  |
 
 Variables are prefixed with `AIDLINE_` on purpose: the Stellar CLI reads `STELLAR_*` variables from `.env`, and sharing names would make CLI commands run from this folder fail.
 

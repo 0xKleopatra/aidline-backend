@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
-import { stellarAddress } from '../lib/http.js';
+import { verifySignedRequest } from '../lib/auth.js';
+import { pagination, stellarAddress } from '../lib/http.js';
 
 const application = z.object({
   address: stellarAddress,
@@ -22,6 +23,40 @@ export async function verifierRoutes(app: FastifyInstance) {
        FROM verifiers WHERE active ORDER BY org_name NULLS LAST, address`,
     );
     return { items: rows };
+  });
+
+  /**
+   * #21: the admin review queue. Applications stay here until the admin calls
+   * `add_verifier` on chain, at which point the indexer flips `active` and the
+   * row leaves this list. Access is limited to the configured admin wallet.
+   */
+  app.get('/verifiers/applications', async (req, reply) => {
+    if (!app.config.ADMIN_WALLET_ADDRESS) {
+      return reply
+        .code(403)
+        .send({ error: 'forbidden', message: 'Admin wallet is not configured' });
+    }
+    const identity = verifySignedRequest(req, reply, 'admin:verifier-applications', {
+      expectedAddress: app.config.ADMIN_WALLET_ADDRESS,
+    });
+    if (!identity) return reply;
+
+    const { limit, offset } = pagination.parse(req.query);
+    const where = 'active = false AND applied_at IS NOT NULL';
+    const [{ rows }, { rows: totals }] = await Promise.all([
+      app.db.query(
+        `SELECT address, org_name AS "orgName", website, country, description,
+                applied_at AS "appliedAt"
+         FROM verifiers WHERE ${where}
+         ORDER BY applied_at ASC, address
+         LIMIT $1 OFFSET $2`,
+        [limit, offset],
+      ),
+      app.db.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM verifiers WHERE ${where}`,
+      ),
+    ]);
+    return { items: rows, total: totals[0]?.count ?? 0 };
   });
 
   app.get('/verifiers/:address', async (req) => {

@@ -21,6 +21,18 @@ const schema = z.object({
   INDEXER_ENABLED: bool,
   METRICS_ENABLED: bool,
   UPLOAD_DIR: z.string().default('uploads'),
+  // Admin endpoint. Empty disables it; otherwise a G... address whose wallet
+  // must sign each request.
+  ADMIN_WALLET_ADDRESS: z
+    .string()
+    .refine((v) => v === '' || /^G[A-Z2-7]{55}$/.test(v), 'must be a Stellar account address')
+    .default(''),
+  // Keeper: a funded testnet/mainnet secret used only to extend campaign TTLs.
+  // Kept out of the repo; loaded from the environment at boot.
+  AIDLINE_KEEPER_SECRET: z.string().default(''),
+  CAMPAIGN_TTL_LEDGERS: z.coerce.number().int().positive().default(172_800),
+  KEEPER_TTL_THRESHOLD_LEDGERS: z.coerce.number().int().positive().default(7_200),
+  KEEPER_INTERVAL_MS: z.coerce.number().int().min(60_000).default(3_600_000),
 });
 
 export type Config = z.infer<typeof schema> & { networkPassphrase: string; corsOrigins: string[] };

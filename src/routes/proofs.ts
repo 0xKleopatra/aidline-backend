@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
+import { verifySignedRequest } from '../lib/auth.js';
 import { notFound } from '../lib/http.js';
 
 /**
@@ -35,6 +36,23 @@ const fields = z.object({
  */
 export async function proofRoutes(app: FastifyInstance) {
   app.post('/proofs', async (req, reply) => {
+    // #7: the signer must be the verifier assigned to this campaign on chain.
+    // The campaign id is bound into the signed message, so a signature for one
+    // campaign cannot be reused for another.
+    const identity = verifySignedRequest(req, reply, 'proof:upload', { requireCampaign: true });
+    if (!identity) return reply;
+    const campaignId = identity.campaignId ?? '';
+    const { rows: campaigns } = await app.db.query<{ verifier: string }>(
+      'SELECT verifier FROM campaigns WHERE id = $1',
+      [campaignId],
+    );
+    if (!campaigns[0]) return notFound(reply, 'campaign');
+    if (campaigns[0].verifier !== identity.address) {
+      return reply
+        .code(403)
+        .send({ error: 'forbidden', message: 'Only the campaign verifier may upload proofs' });
+    }
+
     const id = randomUUID();
     const dir = join(app.config.UPLOAD_DIR, 'proofs', id);
     const raw: Record<string, string> = {};
@@ -68,6 +86,11 @@ export async function proofRoutes(app: FastifyInstance) {
       }
 
       const f = fields.parse(raw);
+      if (f.campaignId.toString() !== campaignId) {
+        return reply
+          .code(403)
+          .send({ error: 'forbidden', message: 'Signed campaign id does not match the upload' });
+      }
       await app.db.query(
         `INSERT INTO proofs (id, campaign_id, milestone_index, note, files)
          VALUES ($1, $2, $3, $4, $5)`,
