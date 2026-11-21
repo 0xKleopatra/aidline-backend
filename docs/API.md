@@ -14,6 +14,8 @@ Errors share one shape:
 }
 ```
 
+If a request fails, see [Troubleshooting](#troubleshooting) for a code-by-code explanation of the cause and how to fix the request.
+
 ## Platform
 
 ### `GET /openapi.json`
@@ -287,3 +289,21 @@ Profile and on chain status for one address.
 ## Files
 
 `GET /uploads/proofs/<proof id>/<file>` serves uploaded proof files.
+
+## Troubleshooting
+
+Every error response has an `error` code and a human-readable `message`. `validation_error` also includes an `issues` array that pinpoints the offending fields. The codes you are most likely to hit as an integrator are below.
+
+| Status | `error` code       | What causes it                                                                                                                                                                                                                                                                                                  | How to fix the request                                                                                                                                                                                                                                                                          |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `validation_error` | Request validation rejected a path parameter, query string or body. Common causes: a campaign id that is not an integer, `limit` above 100 or below 1, a negative `offset`, an invalid enum value (for example `kind=other`), a malformed Stellar address, or a missing or out-of-range field in a `POST` body. | Read `issues`: each entry has a `path` (the field, dot-separated for nested fields) and a `message` explaining the rule. Correct those fields and resend. For pagination keep `limit` between 1 and 100 and `offset` at 0 or greater. For addresses use a `G...` account id, not a contract id. |
+| 404    | `not_found`        | Either the URL path does not match any route (the body message is `Route not found`), or the resource id does not exist (for example a campaign, metadata or proof id that was never created or has not been indexed yet).                                                                                      | Check the path and method against this reference. If the id is meant to exist, confirm it is correct and that the indexer has seen it (`GET /health` reports the indexed ledger). A brand-new campaign may take a ledger or two to appear.                                                      |
+| 413    | `request_error`    | An upload to `POST /proofs` exceeded the multipart limits: a file larger than 5 MB or more than 5 files in one request. The `message` names the limit that was hit.                                                                                                                                             | Split the proof into at most 5 files, each 5 MB or smaller, and use JPEG, PNG, WebP or PDF. Compress images before uploading. Do not send the same files twice.                                                                                                                                 |
+| 429    | `request_error`    | Rate limit exceeded: the API allows 300 requests per minute per client. The `message` reports when the limit resets, and a `Retry-After` header may be present.                                                                                                                                                 | Slow down and retry after the indicated interval. Cache `/config`, `/stats` and campaign lists instead of polling them rapidly, and back off with jitter rather than retrying immediately.                                                                                                      |
+
+Two other codes can appear but are not request mistakes you can fix by editing the payload:
+
+- `request_error` with any other 4xx status is a generic client error (the `message` explains it), for example a malformed request body that is not valid JSON.
+- `internal_error` with status 500 means the server failed. The response message is deliberately generic; the cause is in the server logs. Retry with backoff and include the `X-Request-Id` response header when reporting it.
+
+All responses carry an `X-Request-Id` header. Include it with any bug report so a specific request can be traced in the logs.

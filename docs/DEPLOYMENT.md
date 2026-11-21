@@ -67,6 +67,8 @@ On a fresh database the indexer starts at `INDEXER_START_LEDGER`. Set it to the 
 
 Watch the process logs for indexer errors. A failed page is retried on the next tick, so brief RPC outages heal themselves.
 
+For step-by-step diagnosis of lag, a stalled indexer, gap recovery, RPC outages, a lost database or a contract redeploy, see the [indexer runbook](RUNBOOK.md).
+
 ## Proof file storage
 
 Proof uploads are written to `UPLOAD_DIR` on local disk. Most free hosts wipe local disk on every deploy, so uploaded proofs can disappear. Until proofs move to object storage (tracked as an open issue), either attach a persistent disk or pin the proof files elsewhere and use that URI on chain.
