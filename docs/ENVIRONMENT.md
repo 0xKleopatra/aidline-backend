@@ -21,6 +21,8 @@ Copy [`.env.example`](../.env.example) to `.env` for local development.
 | -------------- | --------------------------------------------------- | -------------------------- |
 | `DATABASE_URL` | `postgres://aidline:aidline@localhost:5433/aidline` | Postgres connection string |
 
+For a hosted provider such as Neon, append `?sslmode=require` to the connection string so `pg` uses TLS, and point it at a development-only database. Never point development or tests at the production database. `npm test` uses its own temporary Postgres and ignores this variable.
+
 ## Stellar and the contract
 
 | Variable              | Default                               | Notes                                                               |

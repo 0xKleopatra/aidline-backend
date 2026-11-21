@@ -12,6 +12,7 @@ import swaggerUi from '@fastify/swagger-ui';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { ZodError } from 'zod';
 
+import { ResponseCache } from './lib/cache.js';
 import type { Config } from './config.js';
 import type { Db } from './db/pool.js';
 import { registerMetrics } from './metrics.js';
@@ -27,6 +28,7 @@ declare module 'fastify' {
   interface FastifyInstance {
     db: Db;
     config: Config;
+    cache: ResponseCache;
   }
 }
 
@@ -38,6 +40,7 @@ export async function buildApp(
   const app = Fastify(opts);
   app.decorate('db', db);
   app.decorate('config', config);
+  app.decorate('cache', new ResponseCache());
 
   // Hardening headers (nosniff, frame-ancestors via X-Frame-Options, referrer policy, HSTS).
   // The CSP is off because this is a JSON API plus the Swagger UI, which needs inline scripts.
